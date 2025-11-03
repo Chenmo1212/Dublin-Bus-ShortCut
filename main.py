@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import requests
 from typing import Optional, List, Dict
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -167,12 +168,18 @@ def get_best_route_to_home():
     Route: Booterstown (E1/E2) -> Westmoreland St -> walk 6min -> Eden Quay (15) -> Home
     """
     try:
+        start_time = datetime.utcnow()
         logger.info("Starting route calculation for to-home")
-        now = datetime.utcnow().replace(tzinfo=None)  # Make timezone-naive for comparison
+        now = datetime.utcnow().replace(tzinfo=None)
         two_hours_later = now + timedelta(hours=2)
         
-        # Step 1: Get E1/E2 departures from Booterstown
-        departures = get_departures(STOPS["booterstown"], "Booterstown Avenue, Mount Merrion")
+        # Step 1: Parallel fetch both departure lists
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            future_e_buses = executor.submit(get_departures, STOPS["booterstown"], "Booterstown Avenue, Mount Merrion")
+            future_bus_15 = executor.submit(get_departures, STOPS["eden_quay"], "Eden Quay, Dublin")
+            
+            departures = future_e_buses.result()
+            bus_15_departures = future_bus_15.result()
         
         if not departures:
             return jsonify({
@@ -190,7 +197,7 @@ def get_best_route_to_home():
             
             dep_time_str = d.get("realTimeDeparture") or d.get("scheduledDeparture")
             if dep_time_str:
-                dep_time = parse_datetime(dep_time_str).replace(tzinfo=None)  # Make timezone-naive
+                dep_time = parse_datetime(dep_time_str).replace(tzinfo=None)
                 if dep_time <= two_hours_later:
                     e_buses.append(d)
         
@@ -202,8 +209,7 @@ def get_best_route_to_home():
         
         logger.info(f"Found {len(e_buses)} E1/E2 buses in next 2 hours")
         
-        # Step 2: Get 15 bus departures from Eden Quay
-        bus_15_departures = get_departures(STOPS["eden_quay"], "Eden Quay, Dublin")
+        # Filter bus 15 departures
         bus_15_departures = [d for d in bus_15_departures
                             if d.get("serviceNumber") == "15"
                             and not d.get("cancelled", False)]
@@ -216,28 +222,24 @@ def get_best_route_to_home():
         
         logger.info(f"Found {len(bus_15_departures)} bus 15 departures")
         
-        # Step 3: Calculate ALL possible routes
-        all_routes = []
+        # Step 2: Parallel fetch all E bus timetables
+        route_candidates = []
         
-        # Check all E buses within 2 hours
-        for e_bus in e_buses:
+        def fetch_e_bus_timetable(e_bus):
+            """Helper function to fetch E bus timetable"""
             service_num = e_bus.get("serviceNumber")
             vehicle = e_bus.get("vehicle", {})
             
-            # Skip if no vehicle data
             if not vehicle.get("dataFrameRef") or not vehicle.get("datedVehicleJourneyRef"):
-                logger.warning(f"Skipping {service_num} - no vehicle tracking data")
-                continue
+                return None
             
-            # Get departure time
             departure_time_str = e_bus.get("realTimeDeparture") or e_bus.get("scheduledDeparture")
             if not departure_time_str:
-                continue
+                return None
             
             departure_time = parse_datetime(departure_time_str)
-            
-            # Get timetable to find Westmoreland arrival
             timetable_id = e_bus.get("serviceID")
+            
             timetable_data = get_estimated_timetable(
                 timetable_id=timetable_id,
                 direction="INBOUND",
@@ -249,27 +251,51 @@ def get_best_route_to_home():
             )
             
             if not timetable_data:
-                logger.warning(f"Could not get timetable for {service_num}")
-                continue
+                return None
             
-            # Find Westmoreland arrival time
             westmoreland_arrival = find_stop_arrival_time(timetable_data, "Westmoreland")
-            
             if not westmoreland_arrival:
-                logger.warning(f"Could not find Westmoreland stop for {service_num}")
-                continue
+                return None
             
-            # Calculate Eden Quay arrival (add walk time)
             eden_arrival = westmoreland_arrival + timedelta(minutes=WALK_TIME_WESTMORELAND_TO_EDEN)
             
-            logger.info(f"{service_num}: Depart {departure_time.strftime('%H:%M')}, "
-                       f"Westmoreland {westmoreland_arrival.strftime('%H:%M')}, "
-                       f"Eden Quay {eden_arrival.strftime('%H:%M')}")
+            return {
+                "e_bus": e_bus,
+                "service_num": service_num,
+                "departure_time": departure_time,
+                "westmoreland_arrival": westmoreland_arrival,
+                "eden_arrival": eden_arrival
+            }
+        
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = {executor.submit(fetch_e_bus_timetable, e_bus): e_bus for e_bus in e_buses}
+            for future in as_completed(futures):
+                result = future.result()
+                if result:
+                    route_candidates.append(result)
+        
+        if not route_candidates:
+            return jsonify({
+                "success": False,
+                "error": "Could not fetch timetables for any E buses"
+            }), 404
+        
+        logger.info(f"Successfully fetched {len(route_candidates)} E bus timetables")
+        
+        # Step 3: Parallel fetch bus 15 timetables for each candidate
+        all_routes = []
+        
+        def fetch_bus_15_timetable(candidate):
+            """Helper function to fetch bus 15 timetable for a route candidate"""
+            e_bus = candidate["e_bus"]
+            service_num = candidate["service_num"]
+            departure_time = candidate["departure_time"]
+            westmoreland_arrival = candidate["westmoreland_arrival"]
+            eden_arrival = candidate["eden_arrival"]
             
-            # Find next available bus 15 (not cancelled)
+            # Find next available bus 15
             next_bus_15 = None
             for bus_15 in bus_15_departures:
-                # Skip cancelled buses
                 if bus_15.get("cancelled", False):
                     continue
                     
@@ -281,15 +307,14 @@ def get_best_route_to_home():
                         break
             
             if not next_bus_15:
-                logger.warning(f"No bus 15 available after {service_num}")
-                continue
+                return None
             
             bus_15_time_str = next_bus_15.get("realTimeDeparture") or next_bus_15.get("scheduledDeparture")
             bus_15_time = parse_datetime(bus_15_time_str)
             
-            # Get bus 15 timetable to find Belmayne arrival time
+            # Get bus 15 timetable
             bus_15_vehicle = next_bus_15.get("vehicle", {})
-            bus_15_duration = 25  # Default fallback
+            bus_15_duration = 25
             belmayne_arrival = None
             
             if bus_15_vehicle.get("dataFrameRef") and bus_15_vehicle.get("datedVehicleJourneyRef"):
@@ -304,21 +329,14 @@ def get_best_route_to_home():
                 )
                 
                 if bus_15_timetable:
-                    # Find Belmayne arrival time
                     belmayne_arrival = find_stop_arrival_time(bus_15_timetable, "Belmayne")
                     if belmayne_arrival:
                         bus_15_duration = (belmayne_arrival - bus_15_time).total_seconds() / 60
-                        logger.info(f"Bus 15 duration to Belmayne: {bus_15_duration:.1f} minutes")
             
-            # Calculate wait time
             wait_time = (bus_15_time - eden_arrival).total_seconds() / 60
-            
-            logger.info(f"{service_num}: Wait time for bus 15: {wait_time:.1f} minutes")
-            
-            # Calculate journey durations
             e_bus_duration = (westmoreland_arrival - departure_time).total_seconds() / 60
             
-            route_option = {
+            return {
                 "e_bus": {
                     "service": service_num,
                     "departure_time": departure_time.strftime("%H:%M"),
@@ -355,10 +373,13 @@ def get_best_route_to_home():
                 "wait_minutes": round(wait_time, 1),
                 "total_journey_minutes": round((bus_15_time - departure_time).total_seconds() / 60 + bus_15_duration, 1)
             }
-            
-            all_routes.append(route_option)
-            logger.info(f"Route {len(all_routes)}: {service_num} at {departure_time.strftime('%H:%M')}, "
-                       f"wait {wait_time:.1f}min, total {route_option['total_journey_minutes']:.0f}min")
+        
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = {executor.submit(fetch_bus_15_timetable, candidate): candidate for candidate in route_candidates}
+            for future in as_completed(futures):
+                result = future.result()
+                if result:
+                    all_routes.append(result)
         
         if not all_routes:
             return jsonify({
@@ -372,7 +393,8 @@ def get_best_route_to_home():
         best_route = all_routes[0]
         other_routes = all_routes[1:]
         
-        logger.info(f"Found {len(all_routes)} total routes. Best: {best_route['e_bus']['service']} "
+        elapsed_time = (datetime.utcnow() - start_time).total_seconds()
+        logger.info(f"Found {len(all_routes)} routes in {elapsed_time:.2f}s. Best: {best_route['e_bus']['service']} "
                    f"at {best_route['e_bus']['departure_time']}")
         
         # Create detailed summary for best route
@@ -439,12 +461,18 @@ def get_best_route_to_date():
     Route: Home (15) -> Hawkins St -> walk 5min -> D'Olier Street (E1/E2) -> Booterstown
     """
     try:
+        start_time = datetime.utcnow()
         logger.info("Starting route calculation for to-date")
         now = datetime.utcnow().replace(tzinfo=None)
         two_hours_later = now + timedelta(hours=2)
         
-        # Step 1: Get bus 15 departures from Temple Vw Ave (home)
-        departures = get_departures(STOPS["temple_view"], "Temple Vw Ave, Clare Hall")
+        # Step 1: Parallel fetch both departure lists
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            future_bus_15 = executor.submit(get_departures, STOPS["temple_view"], "Temple Vw Ave, Clare Hall")
+            future_e_buses = executor.submit(get_departures, STOPS["dolier_street"], "D'Olier Street, Dublin City South")
+            
+            departures = future_bus_15.result()
+            e_bus_departures = future_e_buses.result()
         
         if not departures:
             return jsonify({
@@ -474,8 +502,7 @@ def get_best_route_to_date():
         
         logger.info(f"Found {len(bus_15_list)} bus 15 departures in next 2 hours")
         
-        # Step 2: Get E1/E2 departures from D'Olier Street
-        e_bus_departures = get_departures(STOPS["dolier_street"], "D'Olier Street, Dublin City South")
+        # Filter E1/E2 departures
         e_bus_departures = [d for d in e_bus_departures
                            if d.get("serviceNumber") in ["E1", "E2"]
                            and not d.get("cancelled", False)]
@@ -488,30 +515,26 @@ def get_best_route_to_date():
         
         logger.info(f"Found {len(e_bus_departures)} E1/E2 departures")
         
-        # Step 3: Calculate ALL possible routes
-        all_routes = []
+        # Step 2: Parallel fetch all bus 15 timetables
+        route_candidates = []
         
-        # Check all bus 15 within 2 hours
-        for bus_15 in bus_15_list:
+        def fetch_bus_15_timetable(bus_15):
+            """Helper function to fetch bus 15 timetable"""
             vehicle = bus_15.get("vehicle", {})
             
-            # Skip if no vehicle data
             if not vehicle.get("dataFrameRef") or not vehicle.get("datedVehicleJourneyRef"):
-                logger.warning(f"Skipping bus 15 - no vehicle tracking data")
-                continue
+                return None
             
-            # Get departure time
             departure_time_str = bus_15.get("realTimeDeparture") or bus_15.get("scheduledDeparture")
             if not departure_time_str:
-                continue
+                return None
             
             departure_time = parse_datetime(departure_time_str)
-            
-            # Get timetable to find Hawkins St arrival
             timetable_id = bus_15.get("serviceID")
+            
             timetable_data = get_estimated_timetable(
                 timetable_id=timetable_id,
-                direction="OUTBOUND",  # Going towards city center
+                direction="OUTBOUND",
                 origin_stop_ref=STOPS["temple_view"],
                 origin_departure_time=bus_15.get("scheduledDeparture"),
                 origin_departure_realtime=bus_15.get("realTimeDeparture") or bus_15.get("scheduledDeparture"),
@@ -520,24 +543,47 @@ def get_best_route_to_date():
             )
             
             if not timetable_data:
-                logger.warning(f"Could not get timetable for bus 15")
-                continue
+                return None
             
-            # Find Hawkins St arrival time
             hawkins_arrival = find_stop_arrival_time(timetable_data, "Hawkins")
-            
             if not hawkins_arrival:
-                logger.warning(f"Could not find Hawkins St stop for bus 15")
-                continue
+                return None
             
-            # Calculate D'Olier Street arrival (add walk time)
             dolier_arrival = hawkins_arrival + timedelta(minutes=WALK_TIME_HAWKINS_TO_DOLIER)
             
-            logger.info(f"Bus 15: Depart {departure_time.strftime('%H:%M')}, "
-                       f"Hawkins {hawkins_arrival.strftime('%H:%M')}, "
-                       f"D'Olier {dolier_arrival.strftime('%H:%M')}")
+            return {
+                "bus_15": bus_15,
+                "departure_time": departure_time,
+                "hawkins_arrival": hawkins_arrival,
+                "dolier_arrival": dolier_arrival
+            }
+        
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = {executor.submit(fetch_bus_15_timetable, bus_15): bus_15 for bus_15 in bus_15_list}
+            for future in as_completed(futures):
+                result = future.result()
+                if result:
+                    route_candidates.append(result)
+        
+        if not route_candidates:
+            return jsonify({
+                "success": False,
+                "error": "Could not fetch timetables for any bus 15"
+            }), 404
+        
+        logger.info(f"Successfully fetched {len(route_candidates)} bus 15 timetables")
+        
+        # Step 3: Parallel fetch E bus timetables for each candidate
+        all_routes = []
+        
+        def fetch_e_bus_timetable(candidate):
+            """Helper function to fetch E bus timetable for a route candidate"""
+            bus_15 = candidate["bus_15"]
+            departure_time = candidate["departure_time"]
+            hawkins_arrival = candidate["hawkins_arrival"]
+            dolier_arrival = candidate["dolier_arrival"]
             
-            # Find next available E1/E2 (not cancelled)
+            # Find next available E1/E2
             next_e_bus = None
             for e_bus in e_bus_departures:
                 if e_bus.get("cancelled", False):
@@ -551,16 +597,15 @@ def get_best_route_to_date():
                         break
             
             if not next_e_bus:
-                logger.warning(f"No E1/E2 available after bus 15")
-                continue
+                return None
             
             e_bus_time_str = next_e_bus.get("realTimeDeparture") or next_e_bus.get("scheduledDeparture")
             e_bus_time = parse_datetime(e_bus_time_str)
             service_num = next_e_bus.get("serviceNumber")
             
-            # Get E bus timetable to find Booterstown arrival time
+            # Get E bus timetable
             e_bus_vehicle = next_e_bus.get("vehicle", {})
-            e_bus_duration = 15  # Default fallback
+            e_bus_duration = 15
             booterstown_arrival = None
             
             if e_bus_vehicle.get("dataFrameRef") and e_bus_vehicle.get("datedVehicleJourneyRef"):
@@ -575,21 +620,14 @@ def get_best_route_to_date():
                 )
                 
                 if e_bus_timetable:
-                    # Find Booterstown arrival time
                     booterstown_arrival = find_stop_arrival_time(e_bus_timetable, "Booterstown")
                     if booterstown_arrival:
                         e_bus_duration = (booterstown_arrival - e_bus_time).total_seconds() / 60
-                        logger.info(f"{service_num} duration to Booterstown: {e_bus_duration:.1f} minutes")
             
-            # Calculate wait time
             wait_time = (e_bus_time - dolier_arrival).total_seconds() / 60
-            
-            logger.info(f"Bus 15: Wait time for {service_num}: {wait_time:.1f} minutes")
-            
-            # Calculate journey durations
             bus_15_duration = (hawkins_arrival - departure_time).total_seconds() / 60
             
-            route_option = {
+            return {
                 "bus_15": {
                     "service": "15",
                     "departure_time": departure_time.strftime("%H:%M"),
@@ -626,10 +664,13 @@ def get_best_route_to_date():
                 "wait_minutes": round(wait_time, 1),
                 "total_journey_minutes": round((e_bus_time - departure_time).total_seconds() / 60 + e_bus_duration, 1)
             }
-            
-            all_routes.append(route_option)
-            logger.info(f"Route {len(all_routes)}: Bus 15 at {departure_time.strftime('%H:%M')}, "
-                       f"wait {wait_time:.1f}min, total {route_option['total_journey_minutes']:.0f}min")
+        
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = {executor.submit(fetch_e_bus_timetable, candidate): candidate for candidate in route_candidates}
+            for future in as_completed(futures):
+                result = future.result()
+                if result:
+                    all_routes.append(result)
         
         if not all_routes:
             return jsonify({
@@ -643,7 +684,8 @@ def get_best_route_to_date():
         best_route = all_routes[0]
         other_routes = all_routes[1:]
         
-        logger.info(f"Found {len(all_routes)} total routes. Best: bus 15 at {best_route['bus_15']['departure_time']}")
+        elapsed_time = (datetime.utcnow() - start_time).total_seconds()
+        logger.info(f"Found {len(all_routes)} routes in {elapsed_time:.2f}s. Best: bus 15 at {best_route['bus_15']['departure_time']}")
         
         # Create detailed summary for best route
         bus_15 = best_route['bus_15']
