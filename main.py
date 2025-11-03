@@ -686,7 +686,7 @@ def get_best_route_to_date():
         
         return jsonify({
             "success": True,
-            "route": "to_work",
+            "route": "to_date",
             "total_routes": len(all_routes),
             "best_route": best_route,
             "other_routes": other_routes_summary,
