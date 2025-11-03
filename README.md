@@ -127,7 +127,25 @@ Get Contents of URL → Get Dictionary Value (recommendation.summary) → Show N
 
 ## Deployment
 
-### Railway.app (Recommended)
+### Vercel (Recommended) ⚡
+Deploy to Vercel with zero configuration:
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/YOUR_USERNAME/YOUR_REPO)
+
+**Manual Deployment:**
+1. Install Vercel CLI: `npm i -g vercel`
+2. Run `vercel` in project directory
+3. Follow the prompts
+4. Your API will be live at `https://your-project.vercel.app`
+
+**Features:**
+- ✅ Automatic deployments from Git
+- ✅ Serverless functions (no cold starts)
+- ✅ Free tier available
+- ✅ Global CDN
+- ✅ Zero configuration needed
+
+### Railway.app
 1. Create account at [railway.app](https://railway.app)
 2. Connect your GitHub repository
 3. Railway will auto-detect Python and deploy
