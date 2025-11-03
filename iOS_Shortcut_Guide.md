@@ -1,241 +1,276 @@
 # iOS Shortcut Setup Guide
 
-## 快捷指令设置指南
+## Complete Guide for Setting Up iOS Shortcuts
 
-### 步骤 1: 部署API服务器
+### Step 1: Deploy API Server
 
-选择一个免费部署平台：
+Choose a free deployment platform:
 
-#### Railway.app (推荐)
-1. 访问 https://railway.app
-2. 用GitHub账号登录
-3. 点击 "New Project" → "Deploy from GitHub repo"
-4. 选择这个仓库
-5. Railway会自动检测Python项目并部署
-6. 部署完成后，复制你的API URL（类似：`https://your-app.railway.app`）
+#### Railway.app (Recommended)
+1. Visit https://railway.app
+2. Sign in with GitHub
+3. Click "New Project" → "Deploy from GitHub repo"
+4. Select this repository
+5. Railway will auto-detect Python and deploy
+6. Copy your API URL (e.g., `https://your-app.railway.app`)
 
 #### Render.com
-1. 访问 https://render.com
-2. 创建账号并登录
-3. 点击 "New +" → "Web Service"
-4. 连接GitHub仓库
-5. 设置：
+1. Visit https://render.com
+2. Create account and sign in
+3. Click "New +" → "Web Service"
+4. Connect GitHub repository
+5. Settings:
    - Build Command: `pip install -r requirements.txt`
    - Start Command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
-6. 点击 "Create Web Service"
-7. 复制你的API URL
+6. Click "Create Web Service"
+7. Copy your API URL
 
-### 步骤 2: 创建iOS快捷指令
+### Step 2: Create iOS Shortcut
 
-#### 方法A: 简单版本（只显示结果）
+#### Method A: Simple Version (Show Summary Only)
 
-1. 打开"快捷指令"app
-2. 点击右上角 "+"
-3. 添加以下操作：
+1. Open "Shortcuts" app
+2. Tap "+" in top right
+3. Add these actions:
 
 ```
-1. [获取URL内容]
+1. [Get Contents of URL]
    - URL: https://your-api-url.com/best-route/to-home
-   - 方法: GET
+   - Method: GET
    
-2. [从输入中获取字典值]
-   - 获取: summary
-   - 来自: URL内容
+2. [Get Dictionary Value]
+   - Get: summary
+   - From: Contents of URL
    
-3. [显示通知]
-   - 标题: 🚌 回家路线
-   - 正文: 字典值
+3. [Show Notification]
+   - Title: 🚌 Best Route Home
+   - Body: Dictionary Value
 ```
 
-4. 命名快捷指令为 "回家最佳路线"
-5. 点击完成
+4. Name shortcut "Best Route Home"
+5. Tap Done
 
-#### 方法B: 详细版本（显示完整信息）
+**What you'll see:**
+```
+📊 Found 5 routes in next 2 hours
 
-1. 打开"快捷指令"app
-2. 点击右上角 "+"
-3. 添加以下操作：
+⭐ FASTEST ROUTE (48 min):
+🚏 14:30 - Wait for E1 at Booterstown Avenue
+🚌 Ride 15 min to Westmoreland Street
+🚶 Walk 6 min from Westmoreland Street to Eden Quay
+⏰ Arrive at Eden Quay at 14:51
+⏱️  Wait 4 min
+🚏 14:55 - Take bus 15 at Eden Quay
+🚌 Ride 23 min to Temple Vw Ave, Belmayne (arrive 15:18)
+⏱️  Total: 48 min
+
+📋 Other options:
+1. 14:45 E2 - Wait 8min, Total 52min
+2. 15:00 E1 - Wait 3min, Total 50min
+```
+
+#### Method B: Show All Routes (Choose from List)
+
+1. Open "Shortcuts" app
+2. Tap "+" in top right
+3. Add these actions:
 
 ```
-1. [获取URL内容]
+1. [Get Contents of URL]
    - URL: https://your-api-url.com/best-route/to-home
-   - 方法: GET
+   - Method: GET
 
-2. [从输入中获取字典值]
-   - 获取: recommendation
-   - 来自: URL内容
+2. [Get Dictionary Value]
+   - Get: total_routes
+   - From: Contents of URL
+   - Store as variable: total_routes
 
-3. [从输入中获取字典值]
-   - 获取: e_bus
-   - 来自: 字典值
+3. [Get Dictionary Value]
+   - Get: best_route
+   - From: Contents of URL
 
-4. [从输入中获取字典值]
-   - 获取: service
-   - 来自: 字典值
-   - 存储为变量: bus_service
+4. [Get Dictionary Value]
+   - Get: e_bus
+   - From: Dictionary Value
 
-5. [从输入中获取字典值]
-   - 获取: departure_time
-   - 来自: e_bus
-   - 存储为变量: departure_time
+5. [Get Dictionary Value]
+   - Get: departure_time
+   - From: Dictionary Value
+   - Store as variable: best_time
 
-6. [从输入中获取字典值]
-   - 获取: recommendation
-   - 来自: URL内容
+6. [Get Dictionary Value]
+   - Get: total_journey_minutes
+   - From: best_route
+   - Store as variable: best_total
 
-7. [从输入中获取字典值]
-   - 获取: wait_minutes
-   - 来自: 字典值
-   - 存储为变量: wait_minutes
+7. [Text]
+   Content:
+   Found [total_routes] routes
+   
+   FASTEST: [best_time] ([best_total] min)
+   
+   [summary from API]
 
-8. [从输入中获取字典值]
-   - 获取: bus_15
-   - 来自: recommendation
-
-9. [从输入中获取字典值]
-   - 获取: departure_time
-   - 来自: 字典值
-   - 存储为变量: bus15_time
-
-10. [文本]
-    内容:
-    🚌 乘坐 [bus_service] 在 [departure_time]
-    ⏱️ 等待15路: [wait_minutes] 分钟
-    🚌 15路发车: [bus15_time]
-
-11. [显示通知]
-    - 标题: 回家最佳路线
-    - 正文: 文本
+8. [Show Notification]
+   - Title: 🚌 Routes Home
+   - Body: Text
 ```
 
-#### 方法C: 带语音播报
+#### Method C: With Voice Announcement
 
-在方法A或B的最后添加：
-
-```
-[朗读文本]
-- 文本: 字典值（或组合的文本）
-- 语言: 中文
-```
-
-### 步骤 3: 添加到主屏幕
-
-1. 长按快捷指令
-2. 选择"详细信息"
-3. 点击"添加到主屏幕"
-4. 自定义图标和名称
-5. 点击"添加"
-
-### 步骤 4: 设置自动化（可选）
-
-#### 场景1: 下班时自动运行
-
-1. 打开"快捷指令"app
-2. 切换到"自动化"标签
-3. 点击右上角 "+"
-4. 选择"创建个人自动化"
-5. 选择触发条件：
-   - **时间**: 每天下午5:00
-   - **位置**: 离开公司时
-   - **日历**: 工作日历事件结束时
-6. 添加操作: "运行快捷指令" → 选择"回家最佳路线"
-7. 关闭"运行前询问"（可选）
-8. 点击完成
-
-#### 场景2: 到达Booterstown站时自动运行
-
-1. 创建自动化
-2. 选择"到达"
-3. 选择位置: Booterstown Avenue站
-4. 添加操作: 运行"回家最佳路线"快捷指令
-
-### 步骤 5: 添加Siri语音命令
-
-1. 打开快捷指令详情
-2. 点击"添加到Siri"
-3. 录制语音命令，例如：
-   - "回家路线"
-   - "怎么回家"
-   - "最快回家"
-4. 点击完成
-
-现在你可以对Siri说："嘿Siri，回家路线"
-
-## 高级功能
-
-### 添加错误处理
-
-在"获取URL内容"后添加：
+Add at the end of Method A or B:
 
 ```
-[如果]
-- 条件: URL内容 包含 "success"
-- 则: 显示结果
-- 否则: 显示通知 "无法获取路线信息，请稍后重试"
+[Speak Text]
+- Text: Dictionary Value (or combined text)
+- Language: English
 ```
 
-### 添加加载提示
+### Step 3: Add to Home Screen
 
-在"获取URL内容"前添加：
+1. Long press the shortcut
+2. Select "Details"
+3. Tap "Add to Home Screen"
+4. Customize icon and name
+5. Tap "Add"
+
+### Step 4: Set Up Automation (Optional)
+
+#### Scenario 1: Auto-run when leaving work
+
+1. Open "Shortcuts" app
+2. Switch to "Automation" tab
+3. Tap "+" in top right
+4. Select "Create Personal Automation"
+5. Choose trigger:
+   - **Time**: Every day at 5:00 PM
+   - **Location**: When leaving office
+   - **Calendar**: When work event ends
+6. Add action: "Run Shortcut" → Select "Best Route Home"
+7. Turn off "Ask Before Running" (optional)
+8. Tap Done
+
+#### Scenario 2: Auto-run when arriving at Booterstown
+
+1. Create automation
+2. Select "Arrive"
+3. Choose location: Booterstown Avenue station
+4. Add action: Run "Best Route Home" shortcut
+
+### Step 5: Add Siri Voice Command
+
+1. Open shortcut details
+2. Tap "Add to Siri"
+3. Record voice command, e.g.:
+   - "Route home"
+   - "How to get home"
+   - "Best way home"
+4. Tap Done
+
+Now you can say: "Hey Siri, route home"
+
+## Advanced Features
+
+### Add Error Handling
+
+After "Get Contents of URL" add:
 
 ```
-[显示通知]
-- 标题: 正在计算...
-- 正文: 请稍候
+[If]
+- Condition: Contents of URL contains "success"
+- Then: Show result
+- Otherwise: Show Notification "Unable to get route info, try again later"
 ```
 
-### 保存历史记录
+### Add Loading Indicator
 
-在显示结果后添加：
-
-```
-[添加到备忘录]
-- 备忘录: 通勤记录
-- 内容: [当前日期时间] - [结果文本]
-```
-
-## 故障排除
-
-### 问题1: "无法连接到服务器"
-- 检查API URL是否正确
-- 确认服务器已部署并运行
-- 检查手机网络连接
-
-### 问题2: "请求超时"
-- Transport API可能响应慢
-- 在"获取URL内容"中增加超时时间到30秒
-
-### 问题3: "没有找到公交车"
-- 可能不在服务时间内
-- 检查当前时间是否有E1/E2和15路运营
-
-### 问题4: 结果不准确
-- API使用实时数据，可能有延迟
-- 建议提前5-10分钟查询
-
-## 示例输出
+Before "Get Contents of URL" add:
 
 ```
-🚌 回家最佳路线
-
-乘坐 E1 在 14:30
-到达 Westmoreland 14:45
-步行 6 分钟到 Eden Quay
-到达 Eden Quay 14:51
-等待 15 路: 4.0 分钟
-乘坐 15 路在 14:55 到 Clongriffin
-总时长: 25 分钟
+[Show Notification]
+- Title: Calculating...
+- Body: Please wait
 ```
 
-## 提示
+### Save History
 
-- 建议在出发前5-10分钟运行快捷指令
-- 可以创建多个快捷指令用于不同场景（上班/回家）
-- 使用小组件可以在主屏幕直接查看
-- 考虑设置多个自动化触发条件
+After showing result add:
 
-## 下一步
+```
+[Add to Note]
+- Note: Commute Log
+- Content: [Current Date Time] - [Result Text]
+```
 
-等"去上班"路线开发完成后，可以创建第二个快捷指令：
+## Troubleshooting
+
+### Issue 1: "Cannot connect to server"
+- Check API URL is correct
+- Confirm server is deployed and running
+- Check phone network connection
+
+### Issue 2: "Request timeout"
+- Transport API might be slow
+- Increase timeout to 30 seconds in "Get Contents of URL"
+
+### Issue 3: "No buses found"
+- May be outside service hours
+- Check if E1/E2 and bus 15 are operating at current time
+
+### Issue 4: Results inaccurate
+- API uses real-time data, may have delays
+- Recommend checking 5-10 minutes before departure
+
+## Example Output
+
+```
+📊 Found 5 routes in next 2 hours
+
+⭐ FASTEST ROUTE (48 min):
+🚏 14:30 - Wait for E1 at Booterstown Avenue
+🚌 Ride 15 min to Westmoreland Street
+🚶 Walk 6 min from Westmoreland Street to Eden Quay
+⏰ Arrive at Eden Quay at 14:51
+⏱️  Wait 4 min
+🚏 14:55 - Take bus 15 at Eden Quay
+🚌 Ride 23 min to Temple Vw Ave, Belmayne (arrive 15:18)
+⏱️  Total: 48 min
+
+📋 Other options:
+1. 14:45 E2 - Wait 8min, Total 52min
+2. 15:00 E1 - Wait 3min, Total 50min
+3. 15:15 E2 - Wait 12min, Total 58min
+4. 15:30 E1 - Wait 5min, Total 53min
+```
+
+## Tips
+
+- Run shortcut 5-10 minutes before departure
+- Create multiple shortcuts for different scenarios (work/home)
+- Use widgets to view on home screen
+- Set up multiple automation triggers
+
+## Understanding the Response
+
+### Key Fields
+- `total_routes`: Number of routes found in next 2 hours
+- `best_route`: Fastest route with complete details
+- `other_routes`: Array of alternative routes
+- `summary`: Human-readable text summary
+
+### Using Other Routes
+To show alternative routes in a list:
+```
+[Get Dictionary Value]
+- Get: other_routes
+- From: Contents of URL
+
+[Choose from List]
+- Items: Dictionary Value
+```
+
+## Next Steps
+
+When "to work" route is developed, create a second shortcut:
 - URL: `https://your-api-url.com/best-route/to-work`
-- 命名为"上班最佳路线"
+- Name: "Best Route to Work"
