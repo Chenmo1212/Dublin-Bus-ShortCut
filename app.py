@@ -164,14 +164,23 @@ def root():
 @app.route("/best-route/to-home")
 def get_best_route_to_home():
     """
-    Calculate all possible routes from Booterstown to home within next 2 hours
+    Calculate all possible routes from Booterstown to home within specified hours
     Route: Booterstown (E1/E2) -> Westmoreland St -> walk 6min -> Eden Quay (15) -> Home
+    
+    Query Parameters:
+    - h: Number of hours to look ahead (default: 1, max: 12)
     """
     try:
         start_time = datetime.utcnow()
         logger.info("Starting route calculation for to-home")
+        
+        # Get hours parameter from URL, default to 1 hour
+        hours = request.args.get('h', default=1, type=float)
+        # Limit to reasonable range
+        hours = max(0.5, min(hours, 12))
+        
         now = datetime.utcnow().replace(tzinfo=None)
-        two_hours_later = now + timedelta(hours=2)
+        time_limit = now + timedelta(hours=hours)
         
         # Step 1: Parallel fetch both departure lists
         with ThreadPoolExecutor(max_workers=2) as executor:
@@ -187,7 +196,7 @@ def get_best_route_to_home():
                 "error": "Unable to fetch departure data"
             }), 503
         
-        # Filter for E1 and E2 only, exclude cancelled, and within 2 hours
+        # Filter for E1 and E2 only, exclude cancelled, and within specified hours
         e_buses = []
         for d in departures:
             if d.get("serviceNumber") not in ["E1", "E2"]:
@@ -198,16 +207,16 @@ def get_best_route_to_home():
             dep_time_str = d.get("realTimeDeparture") or d.get("scheduledDeparture")
             if dep_time_str:
                 dep_time = parse_datetime(dep_time_str).replace(tzinfo=None)
-                if dep_time <= two_hours_later:
+                if dep_time <= time_limit:
                     e_buses.append(d)
         
         if not e_buses:
             return jsonify({
                 "success": False,
-                "error": "No E1/E2 buses found in next 2 hours"
+                "error": f"No E1/E2 buses found in next {hours} hour(s)"
             }), 404
         
-        logger.info(f"Found {len(e_buses)} E1/E2 buses in next 2 hours")
+        logger.info(f"Found {len(e_buses)} E1/E2 buses in next {hours} hour(s)")
         
         # Filter bus 15 departures
         bus_15_departures = [d for d in bus_15_departures
@@ -427,7 +436,7 @@ def get_best_route_to_home():
             })
         
         # Overall summary
-        summary = f"📊 Found {len(all_routes)} routes in next 2 hours\n\n"
+        summary = f"📊 Found {len(all_routes)} routes in next {hours} hour(s)\n\n"
         summary += f"⭐ FASTEST ROUTE ({best_route['total_journey_minutes']:.0f} min):\n"
         summary += best_route_summary
         
@@ -457,14 +466,23 @@ def get_best_route_to_home():
 @app.route("/best-route/to-date")
 def get_best_route_to_date():
     """
-    Calculate all possible routes from home to Booterstown within next 2 hours
+    Calculate all possible routes from home to Booterstown within specified hours
     Route: Home (15) -> Hawkins St -> walk 5min -> D'Olier Street (E1/E2) -> Booterstown
+    
+    Query Parameters:
+    - h: Number of hours to look ahead (default: 1, max: 12)
     """
     try:
         start_time = datetime.utcnow()
         logger.info("Starting route calculation for to-date")
+        
+        # Get hours parameter from URL, default to 1 hour
+        hours = request.args.get('h', default=1, type=float)
+        # Limit to reasonable range
+        hours = max(0.5, min(hours, 12))
+        
         now = datetime.utcnow().replace(tzinfo=None)
-        two_hours_later = now + timedelta(hours=2)
+        time_limit = now + timedelta(hours=hours)
         
         # Step 1: Parallel fetch both departure lists
         with ThreadPoolExecutor(max_workers=2) as executor:
@@ -480,7 +498,7 @@ def get_best_route_to_date():
                 "error": "Unable to fetch departure data"
             }), 503
         
-        # Filter for bus 15 only, exclude cancelled, and within 2 hours
+        # Filter for bus 15 only, exclude cancelled, and within specified hours
         bus_15_list = []
         for d in departures:
             if d.get("serviceNumber") != "15":
@@ -491,16 +509,16 @@ def get_best_route_to_date():
             dep_time_str = d.get("realTimeDeparture") or d.get("scheduledDeparture")
             if dep_time_str:
                 dep_time = parse_datetime(dep_time_str).replace(tzinfo=None)
-                if dep_time <= two_hours_later:
+                if dep_time <= time_limit:
                     bus_15_list.append(d)
         
         if not bus_15_list:
             return jsonify({
                 "success": False,
-                "error": "No bus 15 found in next 2 hours"
+                "error": f"No bus 15 found in next {hours} hour(s)"
             }), 404
         
-        logger.info(f"Found {len(bus_15_list)} bus 15 departures in next 2 hours")
+        logger.info(f"Found {len(bus_15_list)} bus 15 departures in next {hours} hour(s)")
         
         # Filter E1/E2 departures
         e_bus_departures = [d for d in e_bus_departures
@@ -717,7 +735,7 @@ def get_best_route_to_date():
             })
         
         # Overall summary
-        summary = f"📊 Found {len(all_routes)} routes in next 2 hours\n\n"
+        summary = f"📊 Found {len(all_routes)} routes in next {hours} hour(s)\n\n"
         summary += f"⭐ FASTEST ROUTE ({best_route['total_journey_minutes']:.0f} min):\n"
         summary += best_route_summary
         

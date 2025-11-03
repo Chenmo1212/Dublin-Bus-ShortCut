@@ -35,7 +35,12 @@ The API will be available at `http://localhost:8000`
 Health check and API information
 
 ### GET `/best-route/to-home`
-Calculate ALL possible routes from Booterstown to home within the next 2 hours.
+Calculate ALL possible routes from Booterstown to home within specified time window.
+
+**Query Parameters:**
+- `h` (optional): Number of hours to look ahead (default: 1, min: 0.5, max: 12)
+  - Example: `/best-route/to-home?h=2` (look ahead 2 hours)
+  - Example: `/best-route/to-home` (default 1 hour)
 
 **Response Example:**
 ```json
@@ -89,6 +94,14 @@ Calculate ALL possible routes from Booterstown to home within the next 2 hours.
 - `all_routes`: Full details of every route (for advanced use)
 - `summary`: Human-readable text summary
 
+### GET `/best-route/to-date`
+Calculate ALL possible routes from home to Booterstown within specified time window.
+
+**Query Parameters:**
+- `h` (optional): Number of hours to look ahead (default: 1, min: 0.5, max: 12)
+  - Example: `/best-route/to-date?h=2` (look ahead 2 hours)
+  - Example: `/best-route/to-date` (default 1 hour)
+
 ## Route Details
 
 ### To Home Route
@@ -99,13 +112,21 @@ Calculate ALL possible routes from Booterstown to home within the next 2 hours.
 5. **Take**: Bus 15 (Stop: 8220DB000299)
 6. **Destination**: Temple Vw Ave, Belmayne (Stop: 8220DB004595)
 
+### To Date Route
+1. **Start**: Temple Vw Ave, Clare Hall (Stop: 8220DB004595)
+2. **Take**: Bus 15 (OUTBOUND)
+3. **Get off**: Hawkins Street
+4. **Walk**: 5 minutes to D'Olier Street
+5. **Take**: E1 or E2 bus (Stop: 8220DB000334)
+6. **Destination**: Booterstown Avenue (Stop: 8250DB002069)
+
 ### How It Works
-1. Fetches all E1/E2 departures from Booterstown in next 2 hours
-2. For each E1/E2 bus:
-   - Gets real-time arrival at Westmoreland Street
-   - Adds 6-minute walk time to Eden Quay
-   - Finds next available bus 15
-   - Gets real-time arrival at Belmayne
+1. Fetches all relevant bus departures within specified time window (default 1 hour)
+2. For each possible first bus:
+   - Gets real-time arrival at transfer point
+   - Adds walking time to next stop
+   - Finds next available connecting bus
+   - Gets real-time arrival at destination
 3. Calculates total journey time for each option
 4. Sorts by fastest total time
 5. Returns best route + all alternatives
@@ -115,15 +136,20 @@ Calculate ALL possible routes from Booterstown to home within the next 2 hours.
 Use the API with iOS Shortcuts:
 
 1. Add "Get Contents of URL" action
-2. URL: `https://your-deployed-api.com/best-route/to-home`
+2. URL: `https://your-deployed-api.com/best-route/to-home?h=2` (adjust `h` parameter as needed)
 3. Method: GET
 4. Parse the JSON response
 5. Display notification with the recommendation
 
 Example Shortcut flow:
 ```
-Get Contents of URL → Get Dictionary Value (recommendation.summary) → Show Notification
+Get Contents of URL → Get Dictionary Value (summary) → Show Notification
 ```
+
+**Pro Tip:** Use different `h` values based on time of day:
+- Morning rush: `h=0.5` (30 minutes)
+- Normal times: `h=1` (1 hour, default)
+- Planning ahead: `h=2` (2 hours)
 
 ## Deployment
 
