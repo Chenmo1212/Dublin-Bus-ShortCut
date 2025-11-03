@@ -196,7 +196,7 @@ def get_best_route_to_home():
                 "error": "Unable to fetch departure data"
             }), 503
         
-        # Filter for E1 and E2 only, exclude cancelled, and within specified hours
+        # Filter for E1 and E2 only, exclude cancelled, and within 2 hours
         e_buses = []
         for d in departures:
             if d.get("serviceNumber") not in ["E1", "E2"]:
@@ -400,7 +400,11 @@ def get_best_route_to_home():
         all_routes.sort(key=lambda x: x['total_journey_minutes'])
         
         best_route = all_routes[0]
-        other_routes = all_routes[1:]
+        
+        # From remaining routes, select up to 5 with earliest departure times
+        remaining_routes = all_routes[1:]
+        remaining_routes.sort(key=lambda x: x['e_bus']['departure_time_iso'])
+        other_routes = remaining_routes[:5]
         
         elapsed_time = (datetime.utcnow() - start_time).total_seconds()
         logger.info(f"Found {len(all_routes)} routes in {elapsed_time:.2f}s. Best: {best_route['e_bus']['service']} "
@@ -436,22 +440,28 @@ def get_best_route_to_home():
             })
         
         # Overall summary
-        summary = f"📊 Found {len(all_routes)} routes in next {hours} hour(s)\n\n"
+        total_found = len(all_routes)
+        displayed_count = len(other_routes) + 1  # +1 for best route
+        
+        summary = f"📊 Found {total_found} routes in next {hours} hour(s)"
+        if total_found > displayed_count:
+            summary += f" (showing {displayed_count})"
+        summary += "\n\n"
         summary += f"⭐ FASTEST ROUTE ({best_route['total_journey_minutes']:.0f} min):\n"
         summary += best_route_summary
         
         if other_routes_summary:
-            summary += f"\n\n📋 Other options:\n"
+            summary += f"\n\n📋 Next {len(other_routes_summary)} earliest options:\n"
             for i, other in enumerate(other_routes_summary, 1):
                 summary += f"{i}. {other['summary']}\n"
         
         return jsonify({
             "success": True,
             "route": "to_home",
-            "total_routes": len(all_routes),
+            "total_routes": total_found,
+            "displayed_routes": displayed_count,
             "best_route": best_route,
             "other_routes": other_routes_summary,
-            "all_routes": all_routes,
             "summary": summary
         })
         
@@ -498,7 +508,7 @@ def get_best_route_to_date():
                 "error": "Unable to fetch departure data"
             }), 503
         
-        # Filter for bus 15 only, exclude cancelled, and within specified hours
+        # Filter for bus 15 only, exclude cancelled, and within 2 hours
         bus_15_list = []
         for d in departures:
             if d.get("serviceNumber") != "15":
@@ -700,7 +710,11 @@ def get_best_route_to_date():
         all_routes.sort(key=lambda x: x['total_journey_minutes'])
         
         best_route = all_routes[0]
-        other_routes = all_routes[1:]
+        
+        # From remaining routes, select up to 5 with earliest departure times
+        remaining_routes = all_routes[1:]
+        remaining_routes.sort(key=lambda x: x['bus_15']['departure_time_iso'])
+        other_routes = remaining_routes[:5]
         
         elapsed_time = (datetime.utcnow() - start_time).total_seconds()
         logger.info(f"Found {len(all_routes)} routes in {elapsed_time:.2f}s. Best: bus 15 at {best_route['bus_15']['departure_time']}")
@@ -735,22 +749,28 @@ def get_best_route_to_date():
             })
         
         # Overall summary
-        summary = f"📊 Found {len(all_routes)} routes in next {hours} hour(s)\n\n"
+        total_found = len(all_routes)
+        displayed_count = len(other_routes) + 1  # +1 for best route
+        
+        summary = f"📊 Found {total_found} routes in next {hours} hour(s)"
+        if total_found > displayed_count:
+            summary += f" (showing {displayed_count})"
+        summary += "\n\n"
         summary += f"⭐ FASTEST ROUTE ({best_route['total_journey_minutes']:.0f} min):\n"
         summary += best_route_summary
         
         if other_routes_summary:
-            summary += f"\n\n📋 Other options:\n"
+            summary += f"\n\n📋 Next {len(other_routes_summary)} earliest options:\n"
             for i, other in enumerate(other_routes_summary, 1):
                 summary += f"{i}. {other['summary']}\n"
         
         return jsonify({
             "success": True,
             "route": "to_work",
-            "total_routes": len(all_routes),
+            "total_routes": total_found,
+            "displayed_routes": displayed_count,
             "best_route": best_route,
             "other_routes": other_routes_summary,
-            "all_routes": all_routes,
             "summary": summary
         })
         
@@ -762,7 +782,9 @@ def get_best_route_to_date():
         }), 500
 
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000, debug=True)
+# Vercel serverless function handler
+def handler(request):
+    with app.request_context(request.environ):
+        return app.full_dispatch_request()
 
 # Made with Bob
