@@ -1,0 +1,15 @@
+bind = '0.0.0.0:5102'
+user = 'www'
+workers = 2
+threads = 2
+backlog = 512
+daemon = True
+chdir = '/www/wwwroot/api.chenmo1212.cn/BusShortCut'
+access_log_format = '%(t)s %(p)s %(h)s "%(r)s" %(s)s %(L)s %(b)s %(f)s" "%(a)s"'
+errorlog = chdir + '/logs/error.log'
+accesslog = chdir + '/logs/access.log'
+pidfile = chdir + '/logs/BusShortCut.pid'
+timeout = 600
+# debug=False
+debug=False
+capture_output = True
